@@ -36,36 +36,85 @@ def ExtractChoices(session, time_bin = 100):
         
 
     
-def EnvironmentRewardRate(session, alpha = 0.05, time_bin = 100):
-    #reward_times = sorted(np.concatenate((session.times['reward_right'],session.times['reward_left']))) # times reward was collected
-    reward_times = FocusedRewardTimes(session)
-    n_bins = int(FocusedTime(session) / time_bin) + 1
-    rho = np.zeros(n_bins)
-    delta = np.zeros(n_bins)
+# def EnvironmentRewardRate(session, alpha = 0.05, time_bin = 100):
+#     #reward_times = sorted(np.concatenate((session.times['reward_right'],session.times['reward_left']))) # times reward was collected
+#     reward_times = FocusedRewardTimes(session)
+#     n_bins = int(FocusedTime(session) / time_bin) + 1
+#     rho = np.zeros(n_bins)
+#     delta = np.zeros(n_bins)
     
-    next_reward_index = 0
+#     next_reward_index = 0
     
-    for i in range(1, n_bins):
-        t = i * time_bin
-        #print(t)
+#     for i in range(1, n_bins):
+#         t = i * time_bin
+#         #print(t)
         
 
-        r = 0 if reward_times[next_reward_index] > t else 1
+#         r = 0 if reward_times[next_reward_index] > t else 1
         
-        if reward_times[next_reward_index] < t:
-            next_reward_index += 1
+#         if reward_times[next_reward_index] < t:
+#             next_reward_index += 1
             
-        #print(r)
-        delta[i] = r-rho[i-1]
-        rho[i] = rho[i-1] + alpha * delta[i] # if r = 1 use alpha_pos, if equal to 0 use alpha_neg      
+#         #print(r)
+#         delta[i] = r-rho[i-1]
+#         rho[i] = rho[i-1] + alpha * delta[i] # if r = 1 use alpha_pos, if equal to 0 use alpha_neg      
 
-    return [rho, delta]
+#     return [rho, delta]
 
-def FocusedTime(session):
-    duration = 0.
-    for patch in session.patch_data:
-        duration += np.nansum(np.append(patch["forage_time"], [patch["travel_time"], patch["give_up_time"]]))
-    return duration
+# def EngagedTimeStamps(session):
+#     # calculates the time stamps of rewards, patch arrivals and departures
+#     # when only periods of engagement (i.e. nosepokes) are considered
+#     duration = 0.
+    
+#     reward_times = np.zeros(session.n_rewards+1)
+#     i = 1
+#     travel_time = 0
+#     give_up_time = 0
+    
+#     n_patches = len(session.patch_data)
+#     patch_arrivals = np.zeros(n_patches+1)
+#     patch_departures = np.zeros(n_patches+1)
+#     i = 1
+    
+#     for patch in session.patch_data:
+#         duration += np.nansum(np.append(patch["forage_time"], [patch["travel_time"], patch["give_up_time"]]))
+#     return duration
+
+def EngagedTimeStamps(session):
+    # calculates the time stamps of rewards, patch arrivals and departures
+    # when only periods of engagement (i.e. nosepokes) are considered, except
+    # for travel time which is the total amount of time between leaving a patch
+    # and arriving in a new one
+    
+    # initialise the outputs, i.e. total session duration, times of patch 
+    # arrivals and departures and reward times
+    
+    total_duration = 0
+    
+    n_patches = len(session.patch_data)
+    patch_arrivals = np.zeros(n_patches+1)
+    patch_departures = np.zeros(n_patches+1)
+    
+    reward_times = np.zeros(session.n_rewards+1)
+    
+    rwd_idx = 1 #index of rewards between all patches
+    
+    for patch_idx, patch in enumerate(session.patch_data):
+        
+        total_duration += np.nansum(np.append(patch["forage_time"], [patch["travel_time"], patch["give_up_time"]]))
+        
+        patch_departures[patch_idx + 1] = patch_departures[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
+        patch_arrivals[patch_idx + 1] = patch_departures[patch_idx+1] + patch["travel_time"]
+        
+        for rwd_patch_idx in range(len(patch["forage_time"])): # looping over rewards within current patch
+            # time of current reward is time of arrival in the current patch plus the amount of time spent
+            # foraging for this and previous rewards inthe same patch
+            reward_times[rwd_idx] = patch_arrivals[patch_idx] + sum(patch["forage_time"][:rwd_patch_idx + 1])
+
+            rwd_idx += 1
+    
+    return (total_duration, reward_times[1:], patch_departures[1:], patch_arrivals[1:])
+    
 
 def FocusedRewardTimes(session):
     reward_times = np.zeros(session.n_rewards+1)
