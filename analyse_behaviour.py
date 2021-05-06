@@ -308,7 +308,51 @@ def time_to_complete_travel(session):
     norm_long_counts   = np.asarray([x/sum_long_counts for x in long_time_counts]) # divide each count number by the total number of observations, turn into array
     norm_short_counts  = np.asarray([x/sum_short_counts for x in short_time_counts])
     
-    return(norm_short_counts,norm_long_counts,bins)
+    return(norm_short_counts,norm_long_counts,bins, times_to_travel_by_travel)
+
+def travel_time_in_poke(session):
+    travel_events         = [event for event in session.events if event.name in ['travel','travel_complete','travel_out_of_poke','travel_resumed','reward_left','reward_right']] 
+    #travel_events         = [event for event in travel_events if event.time < 3600000] # change this number to sample from different timepoints of the session. 360000 = one hour
+    last_travel_completed = [a for a, completes in enumerate(travel_events) if travel_events[a].name == 'travel_complete'][-1]
+    travel_events         = travel_events[0:last_travel_completed+1] 
+    # if travel is followed by another travel, remove the repeated travel - animal has disengaged 
+    duplicate_indices = [i+1 for i,time in enumerate(travel_events[:-1]) if travel_events[i].name == 'travel' and (travel_events[i].name == travel_events[i+1].name)]
+    for index in sorted(duplicate_indices,reverse=True):
+        del travel_events[index] 
+        
+    # similarly if travel_out_of_poke is followed by travel, remove 
+        
+    # remove when animal completes travel, gets reward in patch - but does not CONSUME reward
+    indices_travel_again = [i+1 for i, time in enumerate(travel_events[:-1]) if travel_events[i].name == 'travel_complete' and travel_events[i+1].name == 'travel']
+    if indices_travel_again:
+        for index in sorted(indices_travel_again,reverse=True):
+            del travel_events[index] # deletes the extra travel
+            del travel_events[index] # deletes the extra travel complete
+            
+    travel_events = [travel for i,travel in enumerate(travel_events) if travel_events[i].name != 'reward_left' and travel_events[i].name != 'reward_right']
+    
+    # remove when 'travel_out_of_poke' occurs after animal completes travel (mouse has left the poke < 200ms)
+    itravel_out_of_poke = [i+1 for i, time in enumerate(travel_events[:-1]) if travel_events[i].name == 'travel_complete' and travel_events[i+1].name == 'travel_out_of_poke']    
+    if itravel_out_of_poke:
+        for i in sorted(itravel_out_of_poke,reverse=True):
+            del travel_events[i]
+    
+    # find latencies between events and remove the unnecessary half (when the animal is out of the poke)
+    event_latencies = [travel_events[i+1].time - travel_events[i].time for i,time in enumerate(travel_events[:-1])][::2]
+
+    # find travel indices, divide by two to account for previous removal of half the latencies. Use to sum latencies 
+    travel_idxs   = [int(i/2) for i,event in enumerate(travel_events) if event.name == 'travel']   
+    
+    # time in poke / travel
+    total_poketime = [sum(event_latencies[travel_idxs[j]:travel_idxs[j+1]]) for j, idx in enumerate(travel_idxs[:-1])]
+    
+    # poke bout length
+    bout_length = [event_latencies[travel_idxs[j]:travel_idxs[j+1]] for j, idx in enumerate(travel_idxs[:-1])]
+
+    # number of poke bouts / travel
+    n_poke_bouts = [len(event_latencies[travel_idxs[j]:travel_idxs[j+1]]) for j, idx in enumerate(travel_idxs[:-1])]
+    
+    return(total_poketime,bout_length,n_poke_bouts)  
     
 def av_time_to_complete_travel(experiment,subject_IDs='all',when='all',plot='hist'):
     'Plot the average amount of time it takes for animals to complete travel'
