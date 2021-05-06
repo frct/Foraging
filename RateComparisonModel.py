@@ -11,30 +11,31 @@ import numpy as np
 import analyse_behaviour as analysis
 from numba import jit
 
-def ExtractChoices(session, time_bin = 100):
-    # converts a session into a vector of 0 and 1 corresponding to the 
-    # decision to quit or continue foraging the current patch respectively for 
-    # time bins of a given duration 
-    complete_duration = FocusedTime(session)
-    n_bins = int(complete_duration / time_bin) + 1
-    travel_times = FocusedPatchTransitions(session)
-    i = 0
+# def ExtractChoices(session, time_bin = 100):
+#     # converts a session into a vector of 0 and 1 corresponding to the 
+#     # decision to quit or continue foraging the current patch respectively for 
+#     # time bins of a given duration 
+#     complete_duration = FocusedTime(session)
+#     n_bins = int(complete_duration / time_bin) + 1
+#     travel_times = FocusedPatchTransitions(session)
+#     i = 0
     
-    choices_vector = np.zeros((n_bins))
+#     choices_vector = np.zeros((n_bins))
     
-    for bin_id in range(n_bins):
-        t = bin_id * time_bin
+#     for bin_id in range(n_bins):
+#         t = bin_id * time_bin
         
-        if t > travel_times["arrivals"][i]:
-            i += 1
+#         if t > travel_times["arrivals"][i]:
+#             i += 1
         
-        if t > travel_times["departures"][i] and t < travel_times["arrivals"][i]:
-            choices_vector[bin_id] = 0
-        else: 
-            choices_vector[bin_id] = 1
+#         if t > travel_times["departures"][i] and t < travel_times["arrivals"][i]:
+#             choices_vector[bin_id] = 0
+#         else: 
+#             choices_vector[bin_id] = 1
             
-    return choices_vector.astype(int)
-        
+#     return choices_vector.astype(int)
+
+     
 
 def EngagedTimeStamps(session):
     # calculates the time stamps of rewards, patch arrivals and departures
@@ -49,6 +50,7 @@ def EngagedTimeStamps(session):
     n_patches = len(session.patch_data)
     patch_arrivals = np.zeros(n_patches+1)
     patch_departures = np.zeros(n_patches+1)
+    travel_times = analysis.travel_time_in_poke(session)[0]
     
     reward_times = np.zeros(session.n_rewards+1)
     
@@ -56,10 +58,11 @@ def EngagedTimeStamps(session):
     
     for patch_idx, patch in enumerate(session.patch_data):
         
-        total_duration += np.nansum(np.append(patch["forage_time"], [patch["travel_time"], patch["give_up_time"]]))
+        travel_time = travel_times[patch_idx]
+        total_duration += np.nansum(np.append(patch["forage_time"], patch["give_up_time"])) + travel_time
         
-        patch_departures[patch_idx + 1] = patch_departures[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
-        patch_arrivals[patch_idx + 1] = patch_departures[patch_idx+1] + patch["travel_time"]
+        patch_departures[patch_idx + 1] = patch_arrivals[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
+        patch_arrivals[patch_idx + 1] = patch_departures[patch_idx+1] + travel_time
         
         for rwd_patch_idx in range(len(patch["forage_time"])): # looping over rewards within current patch
             # time of current reward is time of arrival in the current patch plus the amount of time spent
@@ -71,7 +74,7 @@ def EngagedTimeStamps(session):
     return {"total duration": total_duration, "reward times": reward_times[1:], "patch departures": patch_departures[1:], "patch arrivals": patch_arrivals[1:]}
     
 def SemiEngagedTimeStamps(session):
-     # calculates the time stamps of rewards, patch arrivals and departures
+      # calculates the time stamps of rewards, patch arrivals and departures
     # when only periods of engagement (i.e. nosepokes) are considered, except
     # for travel time which is the total amount of time between leaving a patch
     # and arriving in a new one
@@ -79,14 +82,15 @@ def SemiEngagedTimeStamps(session):
     # initialise the outputs, i.e. total session duration, times of patch 
     # arrivals and departures and reward times
     
-    total_duration = 0
-    
     n_patches = len(session.patch_data)
     patch_arrivals = np.zeros(n_patches+1)
     patch_departures = np.zeros(n_patches+1)
     
     tt = analysis.time_to_complete_travel(session)[3]
     real_travel_times = [t[1] * 1000 for t in tt]
+    real_travel_times.append(0)
+    
+    total_duration = sum(real_travel_times)
     
     reward_times = np.zeros(session.n_rewards+1)
     
@@ -94,7 +98,7 @@ def SemiEngagedTimeStamps(session):
     
     for patch_idx, patch in enumerate(session.patch_data):
         
-        total_duration += np.nansum(np.append(patch["forage_time"], patch["give_up_time"])) + real_travel_times[patch_idx]
+        total_duration += np.nansum(np.append(patch["forage_time"], patch["give_up_time"]))
         
         patch_departures[patch_idx + 1] = patch_departures[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
         patch_arrivals[patch_idx + 1] = patch_departures[patch_idx+1] + real_travel_times[patch_idx]
