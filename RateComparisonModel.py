@@ -100,7 +100,7 @@ def SemiEngagedTimeStamps(session):
         
         total_duration += np.nansum(np.append(patch["forage_time"], patch["give_up_time"]))
         
-        patch_departures[patch_idx + 1] = patch_departures[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
+        patch_departures[patch_idx + 1] = patch_arrivals[patch_idx] + sum(patch['forage_time']) + patch["give_up_time"]
         patch_arrivals[patch_idx + 1] = patch_departures[patch_idx+1] + real_travel_times[patch_idx]
         
         for rwd_patch_idx in range(len(patch["forage_time"])): # looping over rewards within current patch
@@ -121,14 +121,14 @@ def RewardRates(params, n_rewards, time_bin, reward_times, departure_times,
     - p_action array is now pre-allocated rather than appended inside loop.
     '''
     # unpack model parameters.
-    alpha_env, alpha_patch, beta, offset, bias = params
+    alpha_env, alpha_patch, beta, reset, bias = params
 
     rho_env = np.zeros(n_bins)
     rho_env[0] = average_reward_rate
     delta_env = np.zeros(n_bins)
     
     rho_patch = np.zeros(n_bins)
-    rho_patch[0] = offset
+    rho_patch[0] = reset
     delta_patch = np.zeros(n_bins)
     
     next_reward_index = 0
@@ -138,8 +138,9 @@ def RewardRates(params, n_rewards, time_bin, reward_times, departure_times,
     
     p_action = np.zeros(n_bins)
     
-    for i in range(1, n_bins):
+    for i in range(1, n_bins+1):
         t = i * time_bin
+        #print(t)
         
         # check if the upcoming reward is in this time bin, and if so start looking out for the next reward
         
@@ -165,7 +166,7 @@ def RewardRates(params, n_rewards, time_bin, reward_times, departure_times,
         # if travelling keep rho_patch constant
         elif t > departure_times[patch_idx]:
             delta_patch[i] = 0
-            rho_patch[i] = offset
+            rho_patch[i] = reset
             if first_bin:
                 p_action[nd] = np.exp(beta * rho_env[i-1]) / (np.exp(bias + beta * rho_patch[i-1]) + np.exp(beta * rho_env[i-1]))
                 nd += 1
