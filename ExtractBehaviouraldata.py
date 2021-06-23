@@ -133,159 +133,91 @@ def ExtractPatches(file_path):
     
     return (patch_data, subject_ID, session_date)
 
-file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-first_patch = 0
-last_patch = None
-
 def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     all_patches, subject, session = ExtractPatches(file_path)
+    patches = all_patches[first_patch : last_patch]
+    n_patches = len(patches)
     
-    selection = slice(first_patch, last_patch)
-    patches = all_patches[selection]
-    
-    
-    reward_times = []
-    
-    left_forage = []
-    right_forage = []
-    
-    poor_patch = []
-    medium_patch = []
-    rich_patch = []
-    
-    
-    
-    short_blocks = []
-    long_blocks = []
-    
-    for n, patch in enumerate(patches):
-        
-        
-        if patch['forage poke'] == 'left':
-            left_forage.append([patch['start'], patch['end']])
-        elif patch['forage poke'] == 'right':
-            right_forage.append([patch['start'], patch['end']])
-        else:
-            print('Error: no poke information')
-            
-        if patch['richness'] == 'poor':
-            poor_patch.append([patch['start'], patch['end']])
-        elif patch['richness'] == 'medium':
-            medium_patch.append([patch['start'], patch['end']])
-        elif patch['richness'] == 'rich':
-            rich_patch.append([patch['start'], patch['end']])
-        else:
-            print('Error: no patch richness information')
-            
-        if patch['block'] == 'short':
-            if n == 0:
-                short_travel_start = patch['start']
-            elif patches[n-1]['block'] == 'long':
-                short_travel_start = patch['start']
-                long_blocks.append([long_travel_start, short_travel_start])
-        elif patch['block'] == 'long':
-            if n == 0:
-                long_travel_start = patch['start']
-            elif patches[n-1]['block'] == 'short':
-                long_travel_start = patch['start']
-                short_blocks.append([short_travel_start, long_travel_start])
-        else:
-            print('Error: no block information')
-        
-        for reward in patch['reward times']:
-            reward_times.append(reward[0])
-    
-        
-    
-    first_instant = patches[0]['forage_times'][0][0][0]
-    last_instant = patches[-1]['reward times'][-1][1]
-    time_window = range(first_instant, last_instant+1)
+    margin = 10
+    first_instant = min(0, patches[0]['forage_times'][0][0][0] - margin)
+    last_instant = patches[-1]['reward times'][-1][1] + margin
+    time_window = range(first_instant, last_instant)
     n_t = len(time_window)
     
-    #initiate reward state
-    
-    reward_state = np.zeros(n_t)
+    patch_nb = 0
     rwd_nb = 0
+    patch = patches[0]
+    n_rwds = len(patch['reward times'])
     
-    # initiate travel block
     
     short_travel_block = np.zeros(n_t)
     long_travel_block = np.zeros(n_t)
-    block_nb = 0
-    
-    # poor patch 
     
     poor_patch_state = np.zeros(n_t)
-    poor_patch_nb = 0
-    
     medium_patch_state = np.zeros(n_t)
-    medium_patch_nb = 0
-    
     rich_patch_state = np.zeros(n_t)
-    rich_patch_nb = 0
     
-    # initialise left or right patch parameters
+    reward_state = np.zeros(n_t)
     
-    left_patch_nb = 0
-    right_patch_nb = 0
-    
-    for i,t in enumerate(time_window):
+    for i, t in enumerate(time_window):
         
-        # update block state
+        # update current patch, and reset reward counter
         
-        if t > short_blocks[block_nb][0] and t < short_blocks[block_nb][1]:
-            short_travel_block[i] = 1
+        if patch_nb < n_patches - 1: #if already in the last patch don't bother, especially since complete_travel_time is not defined
+        
+            if t > patches[patch_nb]['complete_travel_time'][1]:
+                patch_nb += 1
+                patch = patches[patch_nb]
+                n_rwds = len(patch['reward times'])
+                rwd_nb = 0
+                
+            
+        
+        if patch['forage poke'] == 'left':
+            marker = 1
+        elif patch['forage poke'] == 'right':
+            marker = -1
         else:
+            print('Error: missing poke information')
+        
+        if patch['block'] == 'short':
+            short_travel_block[i] = 1
+        elif patch['block'] == 'long':
             long_travel_block[i] = 1
+        else:
+            print('Error: missing block information')
         
-        if t > short_blocks[block_nb][1] and block_nb < len(short_blocks) - 1:
-            block_nb += 1
+        if t > patch['start'] and t < patch['end']: # leave out travelling periods
+            if patch['richness'] == 'poor':
+                poor_patch_state[i] = marker
+            elif patch['richness'] == 'medium':
+                medium_patch_state[i] = marker
+            elif patch['richness'] == 'rich':
+                rich_patch_state[i] = marker
+            else:
+                print('Error: missing richness information')
             
-        # #check and update reward state
-        if rwd_nb < len(reward_times) - 1:
-            if t > reward_times[rwd_nb]:
-                reward_state[i] = 1
+        if t == patch['reward times'][rwd_nb][0]:
+            reward_state[i] = 1
+            if rwd_nb < n_rwds - 1:
                 rwd_nb += 1
-        
-        # check left or right patch and code forage state as either 1 (left forage) or -1 (right forage)
-        if t > left_forage[left_patch_nb][0] and t < left_forage[left_patch_nb][1]:
-            forage_id = 1
-        if t >= left_forage[left_patch_nb][1] and left_patch_nb < len(left_forage) - 1:
-            left_patch_nb += 1
-        if t > right_forage[right_patch_nb][0] and t < right_forage[right_patch_nb][1]:
-            forage_id = -1
-        if t >= right_forage[right_patch_nb][1] and right_patch_nb < len(right_forage) - 1:
-            right_patch_nb += 1
-            
-        #check and update poor patch
-        if t > poor_patch[poor_patch_nb][0] and t < poor_patch[poor_patch_nb][1]:
-            poor_patch_state[i] = forage_id
-        if t >= poor_patch[poor_patch_nb][1] and poor_patch_nb < len(poor_patch) - 1:
-            poor_patch_nb += 1
-        
-        # check and update medium patch state
-        if t > medium_patch[medium_patch_nb][0] and t < medium_patch[medium_patch_nb][1]:
-            medium_patch_state[i] = forage_id
-        if t >= medium_patch[medium_patch_nb][1] and medium_patch_nb < len(medium_patch) - 1:
-            medium_patch_nb += 1
-        
-        if t > rich_patch[rich_patch_nb][0] and t < rich_patch[rich_patch_nb][1]:
-            rich_patch_state[i] = forage_id
-        if t >= rich_patch[rich_patch_nb][1] and rich_patch_nb < len(rich_patch) - 1:
-            rich_patch_nb += 1
     
     plt.figure(figsize=(20,10))
     
     plt.subplot(3,1,1)
-    plt.fill_between(time_window, short_travel_block, 0, 
+    short = plt.fill_between(time_window, short_travel_block, 0, 
                       facecolor = 'b',
                       color = 'b',
-                      alpha = 0.2)
-    plt.fill_between(time_window, long_travel_block, 0,
+                      alpha = 0.2,
+                      label = 'short travel block')
+    long = plt.fill_between(time_window, long_travel_block, 0,
                       facecolor = 'r',
                       color = 'r',
-                      alpha = 0.2)
+                      alpha = 0.2,
+                      label = 'long travel block')
     plt.title('short and long travel time blocks')
+    plt.tick_params(left = False, labelleft = False)
+    plt.legend(handles = [short, long])
     
     plt.subplot(3,1,2)
     poor = plt.fill_between(time_window, poor_patch_state, 0, 
@@ -309,12 +241,11 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     
     plt.subplot(3,1,3)
     plt.plot(reward_state)
+    plt.tick_params(left = False, labelleft = False)
     plt.title('Rewards')
+    plt.xlabel('Time (ms)')
     
-    plt.savefig('session %s summary.png' % session, format = 'png')
-    
-# file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-# PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
+    #plt.savefig('mouse %s/session %s/summary.png' %(subject, session), format = 'png')
 
 def PlotPatchEvents(filepath):
 
@@ -396,5 +327,9 @@ def PlotPatchEvents(filepath):
             plt.tick_params(left = False, labelleft = False)
             plt.savefig('mouse %s/session %s/patch %s travel' %(subject, date,  patch['patch number']), format = 'pdf')
     
+file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
+first_patch = 0
+last_patch = None
+PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
 # file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
 # PlotPatchEvents(file_path)
