@@ -204,13 +204,15 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     
     plt.figure(figsize=(20,10))
     
+    time_window_in_seconds = [t / 1000 for t in time_window]
+    
     plt.subplot(3,1,1)
-    short = plt.fill_between(time_window, short_travel_block, 0, 
+    short = plt.fill_between(time_window_in_seconds, short_travel_block, 0, 
                       facecolor = 'b',
                       color = 'b',
                       alpha = 0.2,
                       label = 'short travel block')
-    long = plt.fill_between(time_window, long_travel_block, 0,
+    long = plt.fill_between(time_window_in_seconds, long_travel_block, 0,
                       facecolor = 'r',
                       color = 'r',
                       alpha = 0.2,
@@ -220,17 +222,17 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     plt.legend(handles = [short, long])
     
     plt.subplot(3,1,2)
-    poor = plt.fill_between(time_window, poor_patch_state, 0, 
+    poor = plt.fill_between(time_window_in_seconds, poor_patch_state, 0, 
                       facecolor = 'r',
                       color = 'r',
                       alpha = 0.2,
                       label = 'Poor')
-    medium = plt.fill_between(time_window, medium_patch_state, 0,
+    medium = plt.fill_between(time_window_in_seconds, medium_patch_state, 0,
                       facecolor = 'b',
                       color = 'b',
                       alpha = 0.2, 
                       label = 'medium')
-    rich = plt.fill_between(time_window, rich_patch_state, 0,
+    rich = plt.fill_between(time_window_in_seconds, rich_patch_state, 0,
                       facecolor = 'g',
                       color = 'g',
                       alpha = 0.2,
@@ -240,18 +242,30 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     plt.legend(handles = [poor, medium, rich])
     
     plt.subplot(3,1,3)
-    plt.plot(reward_state)
+    plt.plot(time_window_in_seconds, reward_state)
     plt.tick_params(left = False, labelleft = False)
     plt.title('Rewards')
-    plt.xlabel('Time (ms)')
+    plt.xlabel('Time (s)')
     
-    #plt.savefig('mouse %s/session %s/summary.png' %(subject, session), format = 'png')
+    plt.savefig('mouse %s/session %s/summary.png' %(subject, session), format = 'png')
 
 def PlotPatchEvents(filepath):
 
     patches, subject, date = ExtractPatches(file_path)
     
     for p, patch in enumerate(patches):
+        
+        if patch['richness'] == 'poor':
+            forage_colour = 'r'
+        elif patch['richness'] == 'medium':
+            forage_colour = 'b'
+        elif patch['richness'] == 'rich':
+            forage_colour = 'g'
+        
+        if patch['block'] == 'short':
+            travel_colour = 'b'
+        elif patch['block'] == 'long':
+            travel_colour = 'r'
         
         first_instant = patch['start']
         last_instant = patch['end']
@@ -292,17 +306,12 @@ def PlotPatchEvents(filepath):
                 bout += 1
                 
             if rwd_nb < len(patch['reward times']): #if any rewards are left, keep an eye out for the next one
-                if t > patch['reward times'][rwd_nb][0] :
-                    reward_state[i] = 1
+                if t > patch['reward times'][rwd_nb][0] and t < patch['reward times'][rwd_nb][1]:
+                    reward_state[i] = -1
+                if t > patch['reward times'][rwd_nb][1]:
                     rwd_nb += 1
-    
-        plt.figure()
-        plt.plot(in_patch_time_window, forage_state)
-        plt.plot(in_patch_time_window, reward_state, 'r')
-        plt.title(patch['richness'] + ' patch number ' + str(p+1))
-        plt.xlabel('Time (ms)')
-        plt.tick_params(left = False, labelleft = False)
-        plt.savefig('mouse %s/session %s/patch %s' %(subject, date,  patch['patch number']), format = 'pdf')
+        
+        
         
         if patch['travel_bouts']:
             travel_start = patch['travel_bouts'][0][0]
@@ -320,16 +329,129 @@ def PlotPatchEvents(filepath):
                 if t > patch['travel_bouts'][poke][1] and poke < len(patch['travel_bouts']) - 1:
                     poke += 1
             
+            time_window_in_seconds = [t / 1000 for t in in_patch_time_window]
+            travel_time_window = [t / 1000 for t in travel_time_window]
+        
             plt.figure()
-            plt.plot(travel_time_window, travel_state)
-            plt.title(patch['block'] + ' travel pokes between patch %s and %s' %(p+1, p+2))
-            plt.xlabel('Time (ms)')
-            plt.tick_params(left = False, labelleft = False)
-            plt.savefig('mouse %s/session %s/patch %s travel' %(subject, date,  patch['patch number']), format = 'pdf')
+            plt.subplot(2,1,1)
+            foraging_line, = plt.plot(time_window_in_seconds, forage_state, color = forage_colour, label = 'foraging poke')
+            reward_line, = plt.plot(time_window_in_seconds, reward_state, 'orange', label = 'reward available')
+            plt.title('patch number ' + str(p+1))
+            plt.yticks([-1, 0, 1], labels = ['reward available', 'disengaged', 'in forage poke'])
+            
+            plt.subplot(2,1,2)
+            plt.plot(travel_time_window, travel_state, color = travel_colour)
+            plt.xlabel('Time (s)')
+            plt.yticks([0, 1], labels = ['disengaged', 'in travel poke'])
+            plt.savefig('mouse %s/session %s/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
+            
+        else:
+            time_window_in_seconds = [t / 1000 for t in in_patch_time_window]
+            plt.figure()
+            plt.subplot(2,1,1)
+            foraging_line, = plt.plot(time_window_in_seconds, forage_state, color = forage_colour, label = 'foraging poke')
+            reward_line, = plt.plot(time_window_in_seconds, reward_state, 'orange', label = 'reward available')
+            plt.title('patch number ' + str(p+1))
+            plt.xlabel('Time (s)')
+            plt.yticks([-1, 0, 1], labels = ['reward available', 'disengaged', 'in forage poke'])
+            plt.savefig('mouse %s/session %s/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
     
-file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-first_patch = 0
-last_patch = None
-PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
 # file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-# PlotPatchEvents(file_path)
+# first_patch = 0
+# last_patch = None
+# PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
+
+## task engagement currently ignores duration of reward available which is probably negligible
+
+def SummaryMeasures(patches):
+
+    dwell_times = [patch['end'] - patch['start'] for patch in patches]
+    total_time_in_patches = sum(dwell_times)
+    
+    n_rewards = [len(patch['forage_times']) for patch in patches]
+    n_forage_pokes_per_reward = [[len(trial) for trial in patch['forage_times']] for patch in patches]
+    n_forage_pokes_per_patch = [sum(n) for n in n_forage_pokes_per_reward]
+    
+    forage_poke_durations = [[[bout[1] - bout [0] for bout in trial] for trial in patch['forage_times']] for patch in patches]
+    forage_poke_durations_per_reward = [[sum(durations) for durations in patch] for patch in forage_poke_durations]
+    forage_poke_durations_per_patch = [sum(durations) for durations  in forage_poke_durations_per_reward]
+    
+    n_pokes_before_giving_up = [len(patch['forage_before_travel']) for patch in patches]
+    poke_durations_before_giving_up = [[poke[1] - poke[0] for poke in patch['forage_before_travel']] for patch in patches]
+    give_up_times = [sum(poke_durations) for poke_durations in poke_durations_before_giving_up]
+    
+    patch_engagement = [(f + g) / t for f, g, t in zip(forage_poke_durations_per_patch, give_up_times, dwell_times)]
+    
+    travel_durations = [patch['complete_travel_time'][1] - patch['complete_travel_time'][0]  for patch in patches if patch['complete_travel_time']]
+    total_time_travelling = sum(travel_durations)
+    
+    n_travel_pokes = [len(patch['travel_bouts']) for patch in patches]
+    travel_poke_durations = [[poke[1] - poke[0] for poke in patch['travel_bouts']] for patch in patches if patch['complete_travel_time']]
+    total_time_in_travel_poke = [sum(durations) for durations in travel_poke_durations]
+    
+    travel_engagement = [p / t for p, t in zip(total_time_in_travel_poke, travel_durations)]
+    
+    overall_engagement = (sum(forage_poke_durations_per_patch) + sum(give_up_times) + sum(total_time_in_travel_poke)) / (sum(dwell_times) + sum(travel_durations))
+    
+    session_duration = total_time_in_patches + total_time_travelling
+    
+    description = {'dwell times': dwell_times, 
+                           'total time in patches': total_time_in_patches,
+                           'rewards per patch': n_rewards,
+                           'number of pokes per reward': n_forage_pokes_per_reward,
+                           'number of pokes per patch': n_forage_pokes_per_patch,
+                           'duration of forage pokes': forage_poke_durations,
+                           'forage time for each reward': forage_poke_durations_per_reward,
+                           'total succesful forage time per patch': forage_poke_durations_per_patch,
+                           'number of pokes before switching': n_pokes_before_giving_up,
+                           'duration of pokes before switching': poke_durations_before_giving_up,
+                           'give up time': give_up_times,
+                           'patch engagement': patch_engagement,
+                           'duration of travel': travel_durations,
+                           'total travel time': total_time_travelling,
+                           'number of travel pokes': n_travel_pokes,
+                           'duration of travel pokes': travel_poke_durations,
+                           'total time in travel poke': total_time_in_travel_poke,
+                           'travel engagement':travel_engagement,
+                           'total duration': session_duration,
+                           'overall engagement': overall_engagement
+                           }
+    
+    return description
+
+def DescribeSession(file_path):
+
+    patches, subject, date = ExtractPatches(file_path)
+    
+    # group different patches into categories of interest
+    
+    short_patches = [patch for patch in patches if patch['block'] == 'short']
+    long_patches = [patch for patch in patches if patch['block'] == 'long']
+    
+    rich_patches = [patch for patch in patches if patch['richness'] == 'rich']
+    medium_patches = [patch for patch in patches if patch['richness'] == 'medium']
+    poor_patches = [patch for patch in patches if patch['richness'] == 'poor']
+    
+    short_and_rich_patches = [patch for patch in patches if (patch['block'] == 'short' and patch['richness'] == 'rich')]
+    short_and_medium_patches = [patch for patch in patches if (patch['block'] == 'short' and patch['richness'] == 'medium')]
+    short_and_poor_patches = [patch for patch in patches if (patch['block'] == 'short' and patch['richness'] == 'poor')]
+    
+    long_and_rich_patches = [patch for patch in patches if (patch['block'] == 'long' and patch['richness'] == 'rich')]
+    long_and_medium_patches = [patch for patch in patches if (patch['block'] == 'long' and patch['richness'] == 'medium')]
+    long_and_poor_patches = [patch for patch in patches if (patch['block'] == 'long' and patch['richness'] == 'poor')]
+    
+    categories = {'all': patches,
+                  'short': short_patches, 'long': long_patches,
+                  'rich': rich_patches, 'medium': medium_patches, 'poor': poor_patches,
+                  'short x rich': short_and_rich_patches, 'short x medium': short_and_medium_patches, 'short x poor': short_and_poor_patches,
+                  'long x rich': long_and_rich_patches, 'long x medium': long_and_medium_patches, 'long x poor': long_and_poor_patches}
+    
+    # get the different summaries for each category
+    
+    detailed_summary = {k: SummaryMeasures(v) for k, v in categories.items()}
+    
+    return detailed_summary
+
+
+file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
+summary = DescribeSession(file_path)
