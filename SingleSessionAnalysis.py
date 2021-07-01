@@ -247,7 +247,7 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     plt.title('Rewards')
     plt.xlabel('Time (s)')
     
-    plt.savefig('mouse %s/session %s/summary.png' %(subject, session), format = 'png')
+    plt.savefig('mouse %s/session %s/timeline/summary.png' %(subject, session), format = 'png')
 
 def PlotPatchEvents(filepath):
 
@@ -343,7 +343,7 @@ def PlotPatchEvents(filepath):
             plt.plot(travel_time_window, travel_state, color = travel_colour)
             plt.xlabel('Time (s)')
             plt.yticks([0, 1], labels = ['disengaged', 'in travel poke'])
-            plt.savefig('mouse %s/session %s/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
+            plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
             
         else:
             time_window_in_seconds = [t / 1000 for t in in_patch_time_window]
@@ -354,14 +354,10 @@ def PlotPatchEvents(filepath):
             plt.title('patch number ' + str(p+1))
             plt.xlabel('Time (s)')
             plt.yticks([-1, 0, 1], labels = ['reward available', 'disengaged', 'in forage poke'])
-            plt.savefig('mouse %s/session %s/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
+            plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
     
-# file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-# first_patch = 0
-# last_patch = None
-# PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
 
-## task engagement currently ignores duration of reward available which is probably negligible
+
 
 def SummaryMeasures(patches):
 
@@ -396,25 +392,25 @@ def SummaryMeasures(patches):
     session_duration = total_time_in_patches + total_time_travelling
     
     description = {'dwell times': dwell_times, 
-                           'total time in patches': total_time_in_patches,
-                           'rewards per patch': n_rewards,
-                           'number of pokes per reward': n_forage_pokes_per_reward,
-                           'number of pokes per patch': n_forage_pokes_per_patch,
-                           'duration of forage pokes': forage_poke_durations,
-                           'forage time for each reward': forage_poke_durations_per_reward,
-                           'total succesful forage time per patch': forage_poke_durations_per_patch,
-                           'number of pokes before switching': n_pokes_before_giving_up,
-                           'duration of pokes before switching': poke_durations_before_giving_up,
-                           'give up time': give_up_times,
-                           'patch engagement': patch_engagement,
-                           'duration of travel': travel_durations,
-                           'total travel time': total_time_travelling,
-                           'number of travel pokes': n_travel_pokes,
-                           'duration of travel pokes': travel_poke_durations,
-                           'total time in travel poke': total_time_in_travel_poke,
-                           'travel engagement':travel_engagement,
-                           'total duration': session_duration,
-                           'overall engagement': overall_engagement
+                   'total time in patches': total_time_in_patches,
+                   'rewards per patch': n_rewards,
+                   'number of pokes per reward': n_forage_pokes_per_reward,
+                   'number of pokes per patch': n_forage_pokes_per_patch,
+                   'duration of forage pokes': forage_poke_durations,
+                   'forage time for each reward': forage_poke_durations_per_reward,
+                   'total succesful forage time per patch': forage_poke_durations_per_patch,
+                   'number of pokes before switching': n_pokes_before_giving_up,
+                   'duration of pokes before switching': poke_durations_before_giving_up,
+                   'give up time': give_up_times,
+                   'patch engagement': patch_engagement,
+                   'duration of travel': travel_durations,
+                   'total travel time': total_time_travelling,
+                   'number of travel pokes': n_travel_pokes,
+                   'duration of travel pokes': travel_poke_durations,
+                   'total time in travel poke': total_time_in_travel_poke,
+                   'travel engagement':travel_engagement,
+                   'total duration': session_duration,
+                   'overall engagement': overall_engagement
                            }
     
     return description
@@ -452,6 +448,235 @@ def DescribeSession(file_path):
     
     return detailed_summary
 
+def FlattenMeasure(measure):
+    
+    flattened_measure = []
+    for patch in measure:
+        for element in patch:
+            flattened_measure.append(element)
+    
+    return flattened_measure
+
+def ConvertPerRewardMeasures(summary, measure, categories):
+    n_rwds = max([len(patch) for patch in summary['all'][measure]])
+    
+    n_cats =len(categories)
+    
+    r = 1 / 3 #ratio of space between bars and bar width
+    margin = 0.1 # extra space between bars of different rwd number
+    width = (1- 2 * margin) / (n_cats * (r+1))
+    off = r * width
+ 
+    x = {cat:[i - 0.5 + margin + (off + width) / 2 + j * (width + off) for i in range(1, n_rwds+1)] for j, cat in enumerate(categories)}
+    y = {cat:[[] for i in range(n_rwds)] for cat in categories}
+    averages = {cat:[] for cat in categories}
+    if measure == 'duration of forage pokes': # this measurement is repeated for each reward (because of bouts of foraging) and needs flattening
+        for cat in categories:
+            for i in range(n_rwds):
+                for patch in summary[cat][measure]:
+                    if len(patch) > i:
+                        for bout in patch[i]:
+                            y[cat][i].append(bout)
+                averages[cat].append(np.mean(y[cat][i]))
+
+    else:
+        for cat in categories:
+            for i in range(n_rwds):
+                for patch in summary[cat][measure]:
+                    if len(patch) > i:
+                        y[cat][i].append(patch[i])
+                averages[cat].append(np.mean(y[cat][i]))
+        
+    return x, width, y, averages
+
+
+
+def PlotSessionSummary(filepath):
+    patches, subject, date = ExtractPatches(file_path)
+    summary = DescribeSession(file_path)
+    
+    list_of_single_measures = ['duration of travel',
+                              'dwell times', 
+                              'give up time',
+                              'number of pokes before switching', 
+                              'number of pokes per patch',
+                              'number of travel pokes',
+                              'patch engagement',
+                              'rewards per patch',
+                              'total succesful forage time per patch',
+                              'total time in travel poke',
+                              'travel engagement']
+    
+    w = 0.5
+    
+    for measure in list_of_single_measures:
+        
+        
+        fig, (ax1,ax2,ax3) = plt.subplots(3,1, figsize = (10,15))
+        x = [1,2]
+        y = [np.mean(summary['short'][measure]), np.mean(summary['long'][measure])]
+        ax1.bar(x, y, alpha = 0.2, width = w)
+        dwell = [[d for d in summary['short'][measure]], [d for d in summary['long'][measure]]]
+        for xe, ye in zip(x, dwell):
+            ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(['short', 'long'])
+    
+         
+        x = [1,2,3]
+        y = [np.mean(summary['poor'][measure]), np.mean(summary['medium'][measure]), np.mean(summary['rich'][measure])]
+        ax2.bar(x, y, alpha = 0.2, width = w)
+        dwell = [[d for d in summary['poor'][measure]], [d for d in summary['medium'][measure]], [d for d in summary['rich'][measure]]]
+        for xe, ye in zip(x, dwell):
+            ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(['poor', 'medium', 'rich'])
+    
+        w = 0.5
+        x = [1, 2, 3, 5, 6, 7]
+        y = [np.mean(summary['short x poor'][measure]), np.mean(summary['short x medium'][measure]), np.mean(summary['short x rich'][measure]),
+              np.mean(summary['long x poor'][measure]), np.mean(summary['long x medium'][measure]), np.mean(summary['long x rich'][measure])]
+        ax3.bar(x, y, alpha = 0.2, width = w)
+        dwell = [[d for d in summary['short x poor'][measure]], [d for d in summary['short x medium'][measure]], [d for d in summary['short x rich'][measure]],
+                  [d for d in summary['long x poor'][measure]], [d for d in summary['long x medium'][measure]], [d for d in summary['long x rich'][measure]]]
+        for xe, ye in zip(x, dwell):
+            #plt.scatter([xe] * len(ye), ye)
+            ax3.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax3.set_xticks(x)
+        ax3.set_xticklabels(['short x poor', 'short x medium', 'short x rich',
+                              'long x poor', 'long x medium', 'long x rich'])
+        
+        fig.suptitle(measure)
+        
+        plt.tight_layout()
+        
+        plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
+        
+    
+    
+    
+    measures_per_reward = ['forage time for each reward',
+                           'number of pokes per reward',
+                           'duration of forage pokes']
+    
+    
+        
+    for measure in measures_per_reward:
+        
+        n_rwds = max([len(patch) for patch in summary['all'][measure]])    
+        fig, (ax1,ax2,ax3) = plt.subplots(3,1, figsize = (10,15))
+            
+        x, w, y, avg = ConvertPerRewardMeasures(summary, measure, ['short', 'long'])
+       
+        ax1.bar(x['short'], avg['short'], alpha = 0.2, width = w, label = 'short')
+        ax1.bar(x['long'], avg['long'], alpha = 0.2, width = w, label = 'long')
+        # pts = [short, long]
+        # for xe, ye in zip(x['short'], y['short']):
+        #     ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        # for xe, ye in zip(x['long'], y['long']):
+        #     ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax1.set_xticks(range(1, n_rwds+1))
+        ax1.set_xlabel('reward number')
+        ax1.legend()
+        
+        
+        x, w, y, avg = ConvertPerRewardMeasures(summary, measure, ['poor', 'medium', 'rich'])
+        
+        ax2.bar(x['poor'], avg['poor'], alpha =0.2, width = w, label = 'poor')
+        ax2.bar(x['medium'], avg['medium'], alpha =0.2, width = w, label = 'medium')
+        ax2.bar(x['rich'], avg['rich'], alpha =0.2, width = w, label = 'rich')
+        # for xe, ye in zip(x['poor'], y['poor']):
+        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        # for xe, ye in zip(x['medium'], y['medium']):
+        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        # for xe, ye in zip(x['rich'], y['rich']):
+        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax2.set_xticks(range(1, n_rwds+1))
+        ax2.set_xlabel('reward number')
+        ax2.legend()
+        
+        
+        x, w, y, avg = ConvertPerRewardMeasures(summary, measure, ['short x poor', 'long x poor',
+                                                        'short x medium', 'long x medium',
+                                                        'short x rich', 'long x rich'])
+        
+        ax3.bar(x['short x poor'], avg['short x poor'], alpha =0.2, width = w, label = 'short x poor')
+        ax3.bar(x['short x medium'], avg['short x medium'], alpha =0.2, width = w, label = 'short x medium')
+        ax3.bar(x['short x rich'], avg['short x rich'], alpha =0.2, width = w, label = 'short x rich')
+        ax3.bar(x['long x poor'], avg['long x poor'], alpha =0.2, width = w, label = 'long x poor')
+        ax3.bar(x['long x medium'], avg['long x medium'], alpha =0.2, width = w, label = 'long x medium')
+        ax3.bar(x['long x rich'], avg['long x rich'], alpha =0.2, width = w, label = 'long x rich')
+        ax3.set_xticks(range(1, n_rwds+1))
+        ax3.set_xlabel('reward number')
+        ax3.legend()
+        
+        fig.suptitle(measure)
+        
+        plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
+        
+    remaining_measures = ['duration of pokes before switching',
+                          'duration of travel pokes']
+    
+    
+    
+    for measure in remaining_measures:
+        
+        short = FlattenMeasure(summary['short'][measure])
+        long = FlattenMeasure(summary['long'][measure])
+        
+        fig, (ax1,ax2,ax3) = plt.subplots(3,1, figsize = (10,15))
+        x = [1,2]
+        y = [np.mean(short), np.mean(long)]
+        ax1.bar(x, y, alpha = 0.2, width = w)
+        pts= [[p for p in short], [p for p in long]]
+        for xe, ye in zip(x, pts):
+            ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(['short', 'long'])
+    
+        
+        poor = FlattenMeasure(summary['poor'][measure])
+        medium = FlattenMeasure(summary['medium'][measure])
+        rich = FlattenMeasure(summary['rich'][measure])    
+        
+        x = [1,2,3]
+        y = [np.mean(poor), np.mean(medium), np.mean(rich)]
+        ax2.bar(x, y, alpha = 0.2, width = w)
+        pts = [[p for p in poor], [p for p in medium], [p for p in rich]]
+        for xe, ye in zip(x, pts):
+            ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(['poor', 'medium', 'rich'])
+    
+    
+        short_x_poor = FlattenMeasure(summary['short x poor'][measure])
+        short_x_medium = FlattenMeasure(summary['short x medium'][measure])
+        short_x_rich = FlattenMeasure(summary['short x rich'][measure])
+        long_x_poor = FlattenMeasure(summary['long x poor'][measure])
+        long_x_medium = FlattenMeasure(summary['long x medium'][measure])
+        long_x_rich = FlattenMeasure(summary['long x rich'][measure])
+        
+        w = 0.5
+        x = [1, 2, 3, 5, 6, 7]
+        y = [np.mean(short_x_poor), np.mean(short_x_medium), np.mean(short_x_rich),
+             np.mean(long_x_poor), np.mean(long_x_medium), np.mean(long_x_rich)]
+        ax3.bar(x, y, alpha = 0.2, width = w)
+        pts = [[p for p in short_x_poor], [p for p in short_x_medium], [p for p in short_x_rich],
+               [p for p in long_x_poor], [p for p in long_x_medium], [p for p in long_x_rich]]
+        for xe, ye in zip(x, pts):
+            #plt.scatter([xe] * len(ye), ye)
+            ax3.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        ax3.set_xticks(x)
+        ax3.set_xticklabels(['short x poor', 'short x medium', 'short x rich',
+                              'long x poor', 'long x medium', 'long x rich'])
+        
+        fig.suptitle(measure)
+        
+        plt.tight_layout()
+        
+        plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
 
 file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-summary = DescribeSession(file_path)
+PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
+PlotSessionSummary(file_path)
+PlotPatchEvents(file_path)
