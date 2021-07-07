@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
+file_path = 'mouse 12/raw data/fp12-2019-06-05-110506.txt'
 
 def ExtractPatches(file_path):
     with open(file_path, 'r') as f:
@@ -24,7 +25,7 @@ def ExtractPatches(file_path):
     session_date = datetime.strptime(datetime_string, '%Y/%m/%d %H:%M:%S').date()
     
     data_lines = [line.split(' ') for line in all_lines if line[0] in ['D', 'P']] # print and data lines
-
+    
     
     state_IDs = eval(next(line for line in all_lines if line[0]=='S')[2:])
     event_IDs = eval(next(line for line in all_lines if line[0]=='E')[2:])
@@ -52,6 +53,8 @@ def ExtractPatches(file_path):
             elif 'TT:4000' in line:
                 block = 'long'
             elif 'IFT:227.583' in line:
+                richness = 'rich'
+            elif 'IFT:227.5831' in line:
                 richness = 'rich'
             elif 'IFT:500' in line:
                 richness = 'medium'
@@ -83,7 +86,12 @@ def ExtractPatches(file_path):
                     
                 if int(line[2]) == stop_forage_id or int(line[2]) == reward_available_id:
                     stop_time = int(line[1])
-                    foraging_bouts.append([start_time, stop_time])
+                    
+                    #somehow it happens that an out event is detected before any in event at the beginning of an experiment (eg : fp12-2019-06-05-110506)
+                    # so check if start_time exists, if not ignore
+                    
+                    if 'start_time' in locals(): # it may happen that an out event at the very beginning of eg 
+                        foraging_bouts.append([start_time, stop_time])
                     if int(line[2]) == reward_available_id: # if a reward is available, then the current trial is over and the foraging bouts are added to trial
                         patch_data[patch_number]["forage_times"].append(foraging_bouts)
                         start_reward = int(line[1])
@@ -129,18 +137,24 @@ def ExtractPatches(file_path):
     patch_data[-1]['block'] = patch_data[-2]['block']
     patch_data[-1]['end'] = int(line[1])
     patch_data[-1]['richness'] = richness
-    patch_data
     
     return (patch_data, subject_ID, session_date)
 
-def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
-    all_patches, subject, session = ExtractPatches(file_path)
+
+
+def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patch = None):
     patches = all_patches[first_patch : last_patch]
     n_patches = len(patches)
     
     margin = 10
-    first_instant = min(0, patches[0]['forage_times'][0][0][0] - margin)
-    last_instant = patches[-1]['reward times'][-1][1] + margin
+    if patches[0]['forage_times']:
+        first_instant = min(0, patches[0]['forage_times'][0][0][0] - margin)
+    else:
+        first_instant = patches[0]['start']
+    if patches[-1]['reward times']:
+        last_instant = patches[-1]['reward times'][-1][1] + margin
+    else:
+        last_instant = patches[-1]['end']
     time_window = range(first_instant, last_instant)
     n_t = len(time_window)
     
@@ -196,13 +210,15 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
                 rich_patch_state[i] = marker
             else:
                 print('Error: missing richness information')
-            
-        if t == patch['reward times'][rwd_nb][0]:
-            reward_state[i] = 1
-            if rwd_nb < n_rwds - 1:
-                rwd_nb += 1
+                
+        if patch['reward times']: #in some patches, the animal doesn't even collect a reward before moving again
+            if t == patch['reward times'][rwd_nb][0]:
+                reward_state[i] = 1
+                if rwd_nb < n_rwds - 1:
+                    rwd_nb += 1
     
     plt.figure(figsize=(20,10))
+    plt.ioff()
     
     time_window_in_seconds = [t / 1000 for t in time_window]
     
@@ -246,12 +262,11 @@ def PlotSessionTimeCourse(file_path, first_patch = 0, last_patch = None):
     plt.tick_params(left = False, labelleft = False)
     plt.title('Rewards')
     plt.xlabel('Time (s)')
-    
-    plt.savefig('mouse %s/session %s/timeline/summary.png' %(subject, session), format = 'png')
 
-def PlotPatchEvents(filepath):
+    plt.savefig('mouse %s/session %s/timeline/summary.png' %(subject, date), format = 'png')
+    plt.close()
 
-    patches, subject, date = ExtractPatches(file_path)
+def PlotPatchEvents(patches, subject, date):
     
     for p, patch in enumerate(patches):
         
@@ -267,15 +282,18 @@ def PlotPatchEvents(filepath):
         elif patch['block'] == 'long':
             travel_colour = 'r'
         
+        #by default use start and end times as boundaries for the figure but if foraging and reward took place focus figure on those events in case of long elapsed time before foraging/after last reward
         first_instant = patch['start']
         last_instant = patch['end']
         
         margin = 100
         
-        first_instant = patch['forage_times'][0][0][0]
+        if patch['forage_times']:
+            first_instant = patch['forage_times'][0][0][0]
+            
         if patch['forage_before_travel']:
             last_instant = patch['forage_before_travel'][-1][1]
-        else:
+        elif patch['reward times']:
             last_instant = patch['reward times'][-1][1]
         
         in_patch_time_window = range(first_instant - margin, last_instant + margin)
@@ -299,11 +317,13 @@ def PlotPatchEvents(filepath):
         
         for i,t in enumerate(in_patch_time_window):
             
-            if t > foraging_bouts[bout][0] and t < foraging_bouts[bout][1]:
-                forage_state[i] = 1
-            
-            if t > foraging_bouts[bout][1] and bout < len(foraging_bouts) - 1:
-                bout += 1
+            if foraging_bouts:
+                
+                if t > foraging_bouts[bout][0] and t < foraging_bouts[bout][1]:
+                    forage_state[i] = 1
+                
+                if t > foraging_bouts[bout][1] and bout < len(foraging_bouts) - 1:
+                    bout += 1
                 
             if rwd_nb < len(patch['reward times']): #if any rewards are left, keep an eye out for the next one
                 if t > patch['reward times'][rwd_nb][0] and t < patch['reward times'][rwd_nb][1]:
@@ -343,8 +363,9 @@ def PlotPatchEvents(filepath):
             plt.plot(travel_time_window, travel_state, color = travel_colour)
             plt.xlabel('Time (s)')
             plt.yticks([0, 1], labels = ['disengaged', 'in travel poke'])
-            plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
             
+            plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
+            plt.close()
         else:
             time_window_in_seconds = [t / 1000 for t in in_patch_time_window]
             plt.figure()
@@ -354,12 +375,12 @@ def PlotPatchEvents(filepath):
             plt.title('patch number ' + str(p+1))
             plt.xlabel('Time (s)')
             plt.yticks([-1, 0, 1], labels = ['reward available', 'disengaged', 'in forage poke'])
+            
             plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
-    
-
-
+            plt.close()    
 
 def SummaryMeasures(patches):
+    n_patches = len(patches)
 
     dwell_times = [patch['end'] - patch['start'] for patch in patches]
     total_time_in_patches = sum(dwell_times)
@@ -387,18 +408,22 @@ def SummaryMeasures(patches):
     
     travel_engagement = [p / t for p, t in zip(total_time_in_travel_poke, travel_durations)]
     
-    overall_engagement = (sum(forage_poke_durations_per_patch) + sum(give_up_times) + sum(total_time_in_travel_poke)) / (sum(dwell_times) + sum(travel_durations))
+    if (sum(dwell_times) + sum(travel_durations)) > 0:
+        overall_engagement = (sum(forage_poke_durations_per_patch) + sum(give_up_times) + sum(total_time_in_travel_poke)) / (sum(dwell_times) + sum(travel_durations))
+    else:
+        overall_engagement = []
     
     session_duration = total_time_in_patches + total_time_travelling
     
-    description = {'dwell times': dwell_times, 
+    description = {'number of patches': n_patches,
+                   'dwell times': dwell_times, 
                    'total time in patches': total_time_in_patches,
                    'rewards per patch': n_rewards,
                    'number of pokes per reward': n_forage_pokes_per_reward,
                    'number of pokes per patch': n_forage_pokes_per_patch,
                    'duration of forage pokes': forage_poke_durations,
                    'forage time for each reward': forage_poke_durations_per_reward,
-                   'total succesful forage time per patch': forage_poke_durations_per_patch,
+                   'total successful forage time per patch': forage_poke_durations_per_patch,
                    'number of pokes before switching': n_pokes_before_giving_up,
                    'duration of pokes before switching': poke_durations_before_giving_up,
                    'give up time': give_up_times,
@@ -415,9 +440,7 @@ def SummaryMeasures(patches):
     
     return description
 
-def DescribeSession(file_path):
-
-    patches, subject, date = ExtractPatches(file_path)
+def DescribeSession(patches, subject, date):
     
     # group different patches into categories of interest
     
@@ -491,9 +514,9 @@ def ConvertPerRewardMeasures(summary, measure, categories):
 
 
 
-def PlotSessionSummary(filepath):
-    patches, subject, date = ExtractPatches(file_path)
-    summary = DescribeSession(file_path)
+def PlotSessionSummary(patches, subject, date):
+
+    summary = DescribeSession(patches, subject, date)
     
     list_of_single_measures = ['duration of travel',
                               'dwell times', 
@@ -550,8 +573,10 @@ def PlotSessionSummary(filepath):
         
         plt.tight_layout()
         
-        plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
         
+        
+        plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
+        plt.close(fig)
     
     
     
@@ -612,7 +637,10 @@ def PlotSessionSummary(filepath):
         
         fig.suptitle(measure)
         
+        
+        
         plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
+        plt.close(fig)
         
     remaining_measures = ['duration of pokes before switching',
                           'duration of travel pokes']
@@ -675,8 +703,11 @@ def PlotSessionSummary(filepath):
         plt.tight_layout()
         
         plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
+        plt.close(fig)
 
-file_path = '../../raw_data/behaviour_data/fp01-2019-02-21-112604.txt'
-PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
-PlotSessionSummary(file_path)
-PlotPatchEvents(file_path)
+# file_path = 'mouse 2/raw data/fp02-2019-02-25-120950.txt'
+# first_patch = 0
+# last_patch = None
+# PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
+# PlotSessionSummary(file_path)
+# PlotPatchEvents(file_path)
