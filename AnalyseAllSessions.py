@@ -11,10 +11,8 @@ import os
 import SingleSessionAnalysis as ssa
 from pathlib import Path
 
-# filepath = 'mouse 12/raw data/fp12-2019-06-05-110506.txt'
-# patches, subject, date = ssa.ExtractPatches(filepath)
 
-list_of_mice = [14,16,17] #1,2,3,7,8,10,11,12,13,14,16,17]
+list_of_mice = [1,2,3,7,8,10,11,12,13,14,16,17]
 
 for mouse in list_of_mice:
     

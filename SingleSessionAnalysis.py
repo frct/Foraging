@@ -12,8 +12,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-file_path = 'mouse 12/raw data/fp12-2019-06-05-110506.txt'
-
 def ExtractPatches(file_path):
     with open(file_path, 'r') as f:
         all_lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -87,11 +85,13 @@ def ExtractPatches(file_path):
                 if int(line[2]) == stop_forage_id or int(line[2]) == reward_available_id:
                     stop_time = int(line[1])
                     
-                    #somehow it happens that an out event is detected before any in event at the beginning of an experiment (eg : fp12-2019-06-05-110506)
+                    #somehow it happens that an "out" event is detected before any "in" event at the beginning of a patch (eg : fp12-2019-06-05-110506 or fp01-2019-02-23-130043 (patch 21))
                     # so check if start_time exists, if not ignore
                     
                     if 'start_time' in locals(): # it may happen that an out event at the very beginning of eg 
                         foraging_bouts.append([start_time, stop_time])
+                        del start_time
+                        
                     if int(line[2]) == reward_available_id: # if a reward is available, then the current trial is over and the foraging bouts are added to trial
                         patch_data[patch_number]["forage_times"].append(foraging_bouts)
                         start_reward = int(line[1])
@@ -139,8 +139,6 @@ def ExtractPatches(file_path):
     patch_data[-1]['richness'] = richness
     
     return (patch_data, subject_ID, session_date)
-
-
 
 def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patch = None):
     patches = all_patches[first_patch : last_patch]
@@ -416,25 +414,25 @@ def SummaryMeasures(patches):
     session_duration = total_time_in_patches + total_time_travelling
     
     description = {'number of patches': n_patches,
-                   'dwell times': dwell_times, 
-                   'total time in patches': total_time_in_patches,
+                   'dwell times': [d / 1000 for d in dwell_times], 
+                   'total time in patches': total_time_in_patches / 1000,
                    'rewards per patch': n_rewards,
                    'number of pokes per reward': n_forage_pokes_per_reward,
                    'number of pokes per patch': n_forage_pokes_per_patch,
-                   'duration of forage pokes': forage_poke_durations,
-                   'forage time for each reward': forage_poke_durations_per_reward,
-                   'total successful forage time per patch': forage_poke_durations_per_patch,
+                   'duration of forage pokes': [[[d / 1000 for d in trial] for trial in patch] for patch in forage_poke_durations],
+                   'forage time for each reward': [[d / 1000 for d in reward] for reward in forage_poke_durations_per_reward],
+                   'total successful forage time per patch': [d / 1000 for d in forage_poke_durations_per_patch],
                    'number of pokes before switching': n_pokes_before_giving_up,
-                   'duration of pokes before switching': poke_durations_before_giving_up,
-                   'give up time': give_up_times,
+                   'duration of pokes before switching': [[d / 1000 for d in patch] for patch in poke_durations_before_giving_up],
+                   'give up time': [d / 1000 for d in give_up_times],
                    'patch engagement': patch_engagement,
-                   'duration of travel': travel_durations,
-                   'total travel time': total_time_travelling,
+                   'duration of travel': [d / 1000 for d in travel_durations],
+                   'total travel time': total_time_travelling / 1000,
                    'number of travel pokes': n_travel_pokes,
-                   'duration of travel pokes': travel_poke_durations,
-                   'total time in travel poke': total_time_in_travel_poke,
+                   'duration of travel pokes': [[d / 1000 for d in patch] for patch in travel_poke_durations],
+                   'total time in travel poke': [d / 1000 for d in total_time_in_travel_poke],
                    'travel engagement':travel_engagement,
-                   'total duration': session_duration,
+                   'total duration': session_duration / 1000,
                    'overall engagement': overall_engagement
                            }
     
@@ -512,8 +510,6 @@ def ConvertPerRewardMeasures(summary, measure, categories):
         
     return x, width, y, averages
 
-
-
 def PlotSessionSummary(patches, subject, date):
 
     summary = DescribeSession(patches, subject, date)
@@ -526,7 +522,7 @@ def PlotSessionSummary(patches, subject, date):
                               'number of travel pokes',
                               'patch engagement',
                               'rewards per patch',
-                              'total succesful forage time per patch',
+                              'total successful forage time per patch',
                               'total time in travel poke',
                               'travel engagement']
     
@@ -705,9 +701,11 @@ def PlotSessionSummary(patches, subject, date):
         plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
         plt.close(fig)
 
-# file_path = 'mouse 2/raw data/fp02-2019-02-25-120950.txt'
+# file_path = 'mouse 1/raw data/fp01-2019-02-23-130043.txt'
 # first_patch = 0
 # last_patch = None
-# PlotSessionTimeCourse(file_path, first_patch = 0, last_patch=None)
-# PlotSessionSummary(file_path)
-# PlotPatchEvents(file_path)
+# patches, subject, date = ExtractPatches(file_path)
+# des = SummaryMeasures(patches)
+# #PlotSessionTimeCourse(this_patch, subject, date, first_patch = 0, last_patch=None)
+# #PlotSessionSummary(thiapatches, subject, date,)
+# PlotPatchEvents(this_patch, subject, date,)
