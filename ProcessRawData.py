@@ -12,9 +12,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-def ExtractPatches(file_path):
+def ExtractPatches(file_path, unit):
     with open(file_path, 'r') as f:
         all_lines = [line.strip() for line in f.readlines() if line.strip()]
+    
+    if unit == 's':
+        dt = 0.001 # by default, raw data is in ms
+    elif unit == 'ms':
+        dt = 1
+    else:
+        print('unit error')
+        
     
     info_lines = [line[2:] for line in all_lines if line[0]=='I']
     subject_ID_string = next(line for line in info_lines if 'Subject ID' in line).split(' : ')[1]
@@ -32,7 +40,7 @@ def ExtractPatches(file_path):
     
     patch_number = 0
     foraging_bouts = []
-    patch_data = [{'forage_times':[], 'forage_before_travel': [], 'travel_bouts': [], 'reward times':[], 'complete_travel_time': [], 'start': 0, 'patch number': 1}]
+    patch_data = [{'forage times':[], 'forage before travel': [], 'travel bouts': [], 'reward times':[], 'complete travel time': [], 'start': 0, 'patch number': 1}]
     
     # initialise ids
     start_forage_id = []
@@ -44,7 +52,6 @@ def ExtractPatches(file_path):
     travelling = False
     
     for line in data_lines:
-        #print(line[1])
         if line[0] == 'P':
             if 'TT:1000' in line:
                 block = 'short'
@@ -63,27 +70,35 @@ def ExtractPatches(file_path):
         
             # identify the correct events for current patch   
             if ID2name[int(line[2])] == 'start_forage_left':
-                #print('forage left')
+                
+                ''' previous version used:
                 start_forage_id = event_IDs['poke_2']
-                stop_forage_id = event_IDs['poke_2_out']
+                stop_forage_id = event_IDs['poke_2_out']'''
+                
+                start_forage_id = state_IDs['in_left']
+                stop_forage_id = state_IDs['out_left']
                 reward_available_id = state_IDs['reward_left_available']
                 reward_consumption_id = state_IDs['reward_consumption_left']
                 patch_data[patch_number]['forage poke'] = 'left'
                 
             elif ID2name[int(line[2])] == 'start_forage_right':
-                #print('forage right')       
+                
+                ''' previous version used:
                 start_forage_id = event_IDs['poke_3']
-                stop_forage_id = event_IDs['poke_3_out']
+                stop_forage_id = event_IDs['poke_3_out']'''
+                
+                start_forage_id = state_IDs['in_right']
+                stop_forage_id = state_IDs['out_right']
                 reward_available_id = state_IDs['reward_right_available']
                 reward_consumption_id = state_IDs['reward_consumption_right']
                 patch_data[patch_number]['forage poke'] = 'right'
             
             if not reward and not travelling: # record foraging events only if no reward is currently available
                 if int(line[2]) == start_forage_id:
-                    start_time = int(line[1])
+                    start_time = round(int(line[1]) * dt, 3)
                     
                 if int(line[2]) == stop_forage_id or int(line[2]) == reward_available_id:
-                    stop_time = int(line[1])
+                    stop_time = round(int(line[1]) *dt, 3)
                     
                     #somehow it happens that an "out" event is detected before any "in" event at the beginning of a patch (eg : fp12-2019-06-05-110506 or fp01-2019-02-23-130043 (patch 21))
                     # so check if start_time exists, if not ignore
@@ -93,67 +108,68 @@ def ExtractPatches(file_path):
                         del start_time
                         
                     if int(line[2]) == reward_available_id: # if a reward is available, then the current trial is over and the foraging bouts are added to trial
-                        patch_data[patch_number]["forage_times"].append(foraging_bouts)
-                        start_reward = int(line[1])
+                        patch_data[patch_number]["forage times"].append(foraging_bouts)
+                        start_reward = round(int(line[1]) * dt, 3)
                         foraging_bouts = []
                         reward = True
+                        
             elif int(line[2]) == reward_consumption_id: # if reward is eaten, start recording foraging events again
                 reward = False
-                end_reward = int(line[1])
+                end_reward = round(int(line[1]) * dt, 3)
                 patch_data[patch_number]["reward times"].append([start_reward, end_reward])
             
             if ID2name[int(line[2])] == 'travel' and not travelling: #sometimes, the travel event resets when an animal has lost interest, not travelling condition ensures these repetitions are simply concatenated with the previous travel
                 travelling = True
-                travel_start = int(line[1])
+                travel_start = round(int(line[1]) * dt, 3)
                 
                 if foraging_bouts: #if the animal has foraged without collecting a reward before starting travel, record this apart and reset trial_foraging_bouts
-                    patch_data[patch_number]["forage_before_travel"] = foraging_bouts
+                    patch_data[patch_number]["forage before travel"] = foraging_bouts
                     foraging_bouts = []
             
             if ID2name[int(line[2])] == 'poke_9':
-                travel_bout_start = int(line[1])
+                travel_bout_start = round(int(line[1]) * dt, 3)
                 in_poke_9 = True
         
             if ID2name[int(line[2])] == 'poke_9_out':
-                travel_bout_end = int(line[1])
+                travel_bout_end = round(int(line[1]) * dt, 3)
                 in_poke_9 = False
                 if travelling : # if still travelling, this bout adds into the current patch travel, otherwise just ignore it
-                    patch_data[patch_number]['travel_bouts'].append([travel_bout_start, travel_bout_end])    
+                    patch_data[patch_number]['travel bouts'].append([travel_bout_start, travel_bout_end])    
                 
             if ID2name[int(line[2])] == 'travel_complete':
-                travel_end = int(line[1])
+                travel_end = round(int(line[1]) * dt, 3)
                 
                 if in_poke_9: #if still in a travel poke bout, add this last bout
-                    patch_data[patch_number]['travel_bouts'].append([travel_bout_start, travel_end])
+                    patch_data[patch_number]['travel bouts'].append([travel_bout_start, travel_end])
                 
-                patch_data[patch_number]['complete_travel_time'] = [travel_start, travel_end]
+                patch_data[patch_number]['complete travel time'] = [travel_start, travel_end]
                 patch_data[patch_number]['block'] = block
                 patch_data[patch_number]['richness'] = richness
                 patch_data[patch_number]['end'] = travel_start
                 travelling = False
                 patch_number += 1
-                patch_data.append({'forage_times':[], 'forage_before_travel': [], 'travel_bouts': [], 'reward times': [], 'complete_travel_time': [], 'start': travel_end, 'patch number': patch_number + 1})
+                patch_data.append({'forage times':[], 'forage before travel': [], 'travel bouts': [], 'reward times': [], 'complete travel time': [], 'start': travel_end, 'patch number': patch_number + 1})
     
     patch_data[-1]['block'] = patch_data[-2]['block']
     patch_data[-1]['end'] = int(line[1])
     patch_data[-1]['richness'] = richness
     
-    return (patch_data, subject_ID, session_date)
+    return patch_data, subject_ID, session_date
 
-def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patch = None):
-    patches = all_patches[first_patch : last_patch]
+def PlotSessionTimeCourse(file_path):
+    patches, subject, date = ExtractPatches(file_path, unit='ms')
     n_patches = len(patches)
     
     margin = 10
-    if patches[0]['forage_times']:
-        first_instant = min(0, patches[0]['forage_times'][0][0][0] - margin)
+    if patches[0]['forage times']:
+        first_instant = min(0, patches[0]['forage times'][0][0][0] - margin)
     else:
         first_instant = patches[0]['start']
     if patches[-1]['reward times']:
         last_instant = patches[-1]['reward times'][-1][1] + margin
     else:
         last_instant = patches[-1]['end']
-    time_window = range(first_instant, last_instant)
+    time_window = range(round(first_instant), round(last_instant))
     n_t = len(time_window)
     
     patch_nb = 0
@@ -177,7 +193,7 @@ def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patc
         
         if patch_nb < n_patches - 1: #if already in the last patch don't bother, especially since complete_travel_time is not defined
         
-            if t > patches[patch_nb]['complete_travel_time'][1]:
+            if t > patches[patch_nb]['complete travel time'][1]:
                 patch_nb += 1
                 patch = patches[patch_nb]
                 n_rwds = len(patch['reward times'])
@@ -210,15 +226,15 @@ def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patc
                 print('Error: missing richness information')
                 
         if patch['reward times']: #in some patches, the animal doesn't even collect a reward before moving again
-            if t == patch['reward times'][rwd_nb][0]:
-                reward_state[i] = 1
-                if rwd_nb < n_rwds - 1:
+            if rwd_nb < n_rwds:
+                if t > patch['reward times'][rwd_nb][0]:
+                    reward_state[i] = 1
                     rwd_nb += 1
-    
+
     plt.figure(figsize=(20,10))
-    plt.ioff()
+    #plt.ioff()
     
-    time_window_in_seconds = [t / 1000 for t in time_window]
+    time_window_in_seconds = time_window # [t / 1000 for t in time_window]
     
     plt.subplot(3,1,1)
     short = plt.fill_between(time_window_in_seconds, short_travel_block, 0, 
@@ -264,7 +280,9 @@ def PlotSessionTimeCourse(all_patches, subject, date, first_patch = 0, last_patc
     plt.savefig('mouse %s/session %s/timeline/summary.png' %(subject, date), format = 'png')
     plt.close()
 
-def PlotPatchEvents(patches, subject, date):
+def PlotPatchEvents(file_path):
+    
+    patches, subject, date = ExtractPatches(file_path, unit='ms')
     
     for p, patch in enumerate(patches):
         
@@ -286,25 +304,25 @@ def PlotPatchEvents(patches, subject, date):
         
         margin = 100
         
-        if patch['forage_times']:
-            first_instant = patch['forage_times'][0][0][0]
+        if patch['forage times']:
+            first_instant = patch['forage times'][0][0][0]
             
-        if patch['forage_before_travel']:
-            last_instant = patch['forage_before_travel'][-1][1]
+        if patch['forage before travel']:
+            last_instant = patch['forage before travel'][-1][1]
         elif patch['reward times']:
             last_instant = patch['reward times'][-1][1]
         
-        in_patch_time_window = range(first_instant - margin, last_instant + margin)
+        in_patch_time_window = range(round(first_instant - margin), round(last_instant + margin))
         n_t = len(in_patch_time_window)
         
         # flatten foraging bouts and include forage_before_travel bouts
         
         foraging_bouts = []
-        for trial in patch['forage_times']:
+        for trial in patch['forage times']:
             for bout in trial:
                 foraging_bouts.append(bout)
-        if patch['forage_before_travel']:
-            for bout in patch['forage_before_travel']:
+        if patch['forage before travel']:
+            for bout in patch['forage before travel']:
                 foraging_bouts.append(bout)
         
         forage_state = np.zeros(n_t)
@@ -331,20 +349,20 @@ def PlotPatchEvents(patches, subject, date):
         
         
         
-        if patch['travel_bouts']:
-            travel_start = patch['travel_bouts'][0][0]
-            travel_end = patch['travel_bouts'][-1][1]
-            travel_time_window = range(travel_start - margin, travel_end + margin)
+        if patch['travel bouts']:
+            travel_start = patch['travel bouts'][0][0]
+            travel_end = patch['travel bouts'][-1][1]
+            travel_time_window = range(round(travel_start - margin), round(travel_end + margin))
             n_t = len(travel_time_window)
             
             travel_state = np.zeros(n_t)
             poke = 0
             
             for i, t in enumerate(travel_time_window):
-                if t > patch['travel_bouts'][poke][0] and t < patch['travel_bouts'][poke][1]:
+                if t > patch['travel bouts'][poke][0] and t < patch['travel bouts'][poke][1]:
                     travel_state[i] = 1
                 
-                if t > patch['travel_bouts'][poke][1] and poke < len(patch['travel_bouts']) - 1:
+                if t > patch['travel bouts'][poke][1] and poke < len(patch['travel bouts']) - 1:
                     poke += 1
             
             time_window_in_seconds = [t / 1000 for t in in_patch_time_window]
@@ -377,31 +395,85 @@ def PlotPatchEvents(patches, subject, date):
             plt.savefig('mouse %s/session %s/timeline/patch %s.png' %(subject, date,  patch['patch number']), format = 'png')
             plt.close()    
 
+# use SummaryMeasures instead
+'''def AnalysePatch(patch):
+    dwell_time = patch['end'] - patch['start']
+    
+    n_rewards = len(patch['forage times'])
+    n_forage_pokes_per_reward = [len(trial) for trial in patch['forage times']]
+    
+    bout_durations = [[bout[1] - bout[0] for bout in trial] for trial in patch['forage times']]
+    forage_per_reward = [sum(durations) for durations in bout_durations]
+    successful_forage_duration = sum(forage_per_reward)
+    
+    n_pokes_before_giving_up = len(patch['forage before travel'])
+    poke_durations_before_giving_up = [poke[1] - poke[0] for poke in patch['forage before travel']]
+    give_up_time = sum(poke_durations_before_giving_up)
+    
+    n_forage_pokes = sum(n_forage_pokes_per_reward) + n_pokes_before_giving_up
+    total_foraging = successful_forage_duration + give_up_time
+    patch_engagement = total_foraging / dwell_time
+    
+    if patch['complete travel time']:
+        travel_duration = patch['complete travel time'][1] - patch['complete travel time'][0]
+        travel_poke_durations = [poke[1] - poke[0] for poke in patch['travel bouts']]
+        n_travel_pokes = len(patch['travel bouts'])
+        total_time_in_travel_poke = sum(travel_poke_durations)
+        travel_engagement = total_time_in_travel_poke / travel_duration
+    else:
+        travel_duration = None
+        travel_poke_durations = None
+        n_travel_pokes = None
+        total_time_in_travel_poke = None
+        travel_engagement = None
+    
+    analysis = {'dwell time': dwell_time,
+                'rewards': n_rewards,
+                'pokes per reward': n_forage_pokes_per_reward,                   
+                'successful forage bouts': bout_durations,
+                'foraging per reward': forage_per_reward,
+                'rewarded foraging': successful_forage_duration,
+                'pokes before switching': n_pokes_before_giving_up,
+                'duration of pokes before switching': poke_durations_before_giving_up,
+                'total give up time': give_up_time,
+                'total pokes': n_forage_pokes, 
+                'total foraging': total_foraging,
+                'patch engagement': patch_engagement,
+                'duration of travel': travel_duration,
+                'number of travel pokes': n_travel_pokes,
+                'duration of travel pokes': travel_poke_durations,
+                'total time in travel poke': total_time_in_travel_poke,
+                'travel engagement':travel_engagement}
+    
+    return analysis '''
+
 def SummaryMeasures(patches):
     n_patches = len(patches)
-
+    
     dwell_times = [patch['end'] - patch['start'] for patch in patches]
     total_time_in_patches = sum(dwell_times)
     
-    n_rewards = [len(patch['forage_times']) for patch in patches]
-    n_forage_pokes_per_reward = [[len(trial) for trial in patch['forage_times']] for patch in patches]
+    n_rewards = [len(patch['forage times']) for patch in patches]
+    n_forage_pokes_per_reward = [[len(trial) for trial in patch['forage times']] for patch in patches]
     n_forage_pokes_per_patch = [sum(n) for n in n_forage_pokes_per_reward]
     
-    forage_poke_durations = [[[bout[1] - bout [0] for bout in trial] for trial in patch['forage_times']] for patch in patches]
+    forage_poke_durations = [[[bout[1] - bout [0] for bout in trial] for trial in patch['forage times']] for patch in patches]
     forage_poke_durations_per_reward = [[sum(durations) for durations in patch] for patch in forage_poke_durations]
     forage_poke_durations_per_patch = [sum(durations) for durations  in forage_poke_durations_per_reward]
     
-    n_pokes_before_giving_up = [len(patch['forage_before_travel']) for patch in patches]
-    poke_durations_before_giving_up = [[poke[1] - poke[0] for poke in patch['forage_before_travel']] for patch in patches]
+    n_pokes_before_giving_up = [len(patch['forage before travel']) for patch in patches]
+    poke_durations_before_giving_up = [[poke[1] - poke[0] for poke in patch['forage before travel']] for patch in patches]
     give_up_times = [sum(poke_durations) for poke_durations in poke_durations_before_giving_up]
     
-    patch_engagement = [(f + g) / t for f, g, t in zip(forage_poke_durations_per_patch, give_up_times, dwell_times)]
+    total_foraging = [sum(x) for x in zip(forage_poke_durations_per_patch, give_up_times)]
+    total_n_forage_pokes = [s + g for s, g in zip(n_forage_pokes_per_patch,n_pokes_before_giving_up)]
+    patch_engagement = [f / t for f, g, t in zip(total_foraging, give_up_times, dwell_times)]
     
-    travel_durations = [patch['complete_travel_time'][1] - patch['complete_travel_time'][0]  for patch in patches if patch['complete_travel_time']]
+    travel_durations = [patch['complete travel time'][1] - patch['complete travel time'][0]  for patch in patches if patch['complete travel time']]
     total_time_travelling = sum(travel_durations)
     
-    n_travel_pokes = [len(patch['travel_bouts']) for patch in patches]
-    travel_poke_durations = [[poke[1] - poke[0] for poke in patch['travel_bouts']] for patch in patches if patch['complete_travel_time']]
+    n_travel_pokes = [len(patch['travel bouts']) for patch in patches]
+    travel_poke_durations = [[poke[1] - poke[0] for poke in patch['travel bouts']] for patch in patches if patch['complete travel time']]
     total_time_in_travel_poke = [sum(durations) for durations in travel_poke_durations]
     
     travel_engagement = [p / t for p, t in zip(total_time_in_travel_poke, travel_durations)]
@@ -414,31 +486,35 @@ def SummaryMeasures(patches):
     session_duration = total_time_in_patches + total_time_travelling
     
     description = {'number of patches': n_patches,
-                   'dwell times': [d / 1000 for d in dwell_times], 
-                   'total time in patches': total_time_in_patches / 1000,
+                   'dwell times': dwell_times, 
+                   'total time in patches': total_time_in_patches,
                    'rewards per patch': n_rewards,
                    'number of pokes per reward': n_forage_pokes_per_reward,
-                   'number of pokes per patch': n_forage_pokes_per_patch,
-                   'duration of forage pokes': [[[d / 1000 for d in trial] for trial in patch] for patch in forage_poke_durations],
-                   'forage time for each reward': [[d / 1000 for d in reward] for reward in forage_poke_durations_per_reward],
-                   'total successful forage time per patch': [d / 1000 for d in forage_poke_durations_per_patch],
+                   'n_forage_pokes_per_patch': n_forage_pokes_per_patch,
+                   'number of pokes per patch': total_n_forage_pokes,
+                   'duration of forage pokes': [[[d for d in trial] for trial in patch] for patch in forage_poke_durations],
+                   'forage time for each reward': [[d for d in reward] for reward in forage_poke_durations_per_reward],
+                   'total successful forage time per patch': [d for d in forage_poke_durations_per_patch],
                    'number of pokes before switching': n_pokes_before_giving_up,
-                   'duration of pokes before switching': [[d / 1000 for d in patch] for patch in poke_durations_before_giving_up],
-                   'give up time': [d / 1000 for d in give_up_times],
+                   'duration of pokes before switching': [[d for d in patch] for patch in poke_durations_before_giving_up],
+                   'give up time': give_up_times,
+                   'total foraging per patch': total_foraging,
                    'patch engagement': patch_engagement,
-                   'duration of travel': [d / 1000 for d in travel_durations],
-                   'total travel time': total_time_travelling / 1000,
+                   'duration of travel': travel_durations,
+                   'total travel time': total_time_travelling,
                    'number of travel pokes': n_travel_pokes,
-                   'duration of travel pokes': [[d / 1000 for d in patch] for patch in travel_poke_durations],
-                   'total time in travel poke': [d / 1000 for d in total_time_in_travel_poke],
+                   'duration of travel pokes': [[d for d in patch] for patch in travel_poke_durations],
+                   'total time in travel poke': total_time_in_travel_poke,
                    'travel engagement':travel_engagement,
-                   'total duration': session_duration / 1000,
+                   'total duration': session_duration,
                    'overall engagement': overall_engagement
                            }
     
     return description
 
-def DescribeSession(patches, subject, date):
+def BreakDownSession(file_path, unit = 's'):
+    
+    patches, subject, date = ExtractPatches(file_path, unit)
     
     # group different patches into categories of interest
     
@@ -510,9 +586,11 @@ def ConvertPerRewardMeasures(summary, measure, categories):
         
     return x, width, y, averages
 
-def PlotSessionSummary(patches, subject, date):
-
-    summary = DescribeSession(patches, subject, date)
+def PlotSessionSummary(file_path, unit = 's'):
+    
+    patches, subject, date = ExtractPatches(file_path, unit)
+    
+    summary = BreakDownSession(file_path, unit)
     
     list_of_single_measures = ['duration of travel',
                               'dwell times', 
@@ -592,10 +670,10 @@ def PlotSessionSummary(patches, subject, date):
         ax1.bar(x['short'], avg['short'], alpha = 0.2, width = w, label = 'short')
         ax1.bar(x['long'], avg['long'], alpha = 0.2, width = w, label = 'long')
         # pts = [short, long]
-        # for xe, ye in zip(x['short'], y['short']):
-        #     ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
-        # for xe, ye in zip(x['long'], y['long']):
-        #     ax1.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        for xe, ye in zip(x['short'], y['short']):
+            ax1.scatter([xe] * len(ye), ye)
+        for xe, ye in zip(x['long'], y['long']):
+            ax1.scatter([xe] * len(ye), ye)
         ax1.set_xticks(range(1, n_rwds+1))
         ax1.set_xlabel('reward number')
         ax1.legend()
@@ -606,12 +684,12 @@ def PlotSessionSummary(patches, subject, date):
         ax2.bar(x['poor'], avg['poor'], alpha =0.2, width = w, label = 'poor')
         ax2.bar(x['medium'], avg['medium'], alpha =0.2, width = w, label = 'medium')
         ax2.bar(x['rich'], avg['rich'], alpha =0.2, width = w, label = 'rich')
-        # for xe, ye in zip(x['poor'], y['poor']):
-        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
-        # for xe, ye in zip(x['medium'], y['medium']):
-        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
-        # for xe, ye in zip(x['rich'], y['rich']):
-        #     ax2.scatter(xe + np.random.random(len(ye)) * w - w / 2, ye)
+        for xe, ye in zip(x['poor'], y['poor']):
+            ax2.scatter([xe] * len(ye), ye)
+        for xe, ye in zip(x['medium'], y['medium']):
+            ax2.scatter([xe] * len(ye), ye)
+        for xe, ye in zip(x['rich'], y['rich']):
+            ax2.scatter([xe] * len(ye), ye)
         ax2.set_xticks(range(1, n_rwds+1))
         ax2.set_xlabel('reward number')
         ax2.legend()
@@ -701,11 +779,12 @@ def PlotSessionSummary(patches, subject, date):
         plt.savefig('mouse %s/session %s/summary/%s.png' %(subject, date,  measure), format = 'png')
         plt.close(fig)
 
-# file_path = 'mouse 1/raw data/fp01-2019-02-23-130043.txt'
-# first_patch = 0
-# last_patch = None
-# patches, subject, date = ExtractPatches(file_path)
-# des = SummaryMeasures(patches)
-# #PlotSessionTimeCourse(this_patch, subject, date, first_patch = 0, last_patch=None)
-# #PlotSessionSummary(thiapatches, subject, date,)
-# PlotPatchEvents(this_patch, subject, date,)
+file_path = 'mouse 7/raw data/fp07-2019-03-05-104105.txt'
+
+# session, subject, date = ExtractPatches(file_path, 's')
+# des = SummaryMeasures([session[0]])
+# analysis = AnalysePatch(session[0])
+det = BreakDownSession(file_path, 's')
+#PlotSessionTimeCourse(file_path)
+#PlotPatchEvents(file_path)
+PlotSessionSummary(file_path, 's')
